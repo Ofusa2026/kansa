@@ -33,6 +33,7 @@
   .nav button.on{background:#fff;color:var(--primary);font-weight:600}
   .nav .ic{width:18px;text-align:center}
   .navlabel{font-size:10.5px;color:#9aa7c4;letter-spacing:.08em;padding:14px 14px 4px;margin-top:6px;border-top:1px solid rgba(255,255,255,.10)}
+  .abclegend{font-size:12px;color:var(--muted);margin:0 0 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .side .foot{padding:14px 20px;font-size:11px;color:#9aa7c4;border-top:1px solid rgba(255,255,255,.12)}
   .main{flex:1;min-width:0;display:flex;flex-direction:column}
   .top{background:var(--surface);border-bottom:1px solid var(--line);padding:14px 26px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:5}
@@ -119,15 +120,15 @@
   <aside class="side" id="side">
     <div class="brand"><b>カンシス</b><span>登録支援機関 監査システム</span></div>
     <nav class="nav" id="nav">
-      <button data-v="dashboard" class="on"><span class="ic">▤</span>ダッシュボード</button>
+      <button data-v="mock" class="on"><span class="ic">◎</span>模擬監査</button>
+      <button data-v="dashboard"><span class="ic">▤</span>ダッシュボード</button>
       <button data-v="orgs"><span class="ic">▦</span>監査対象機関</button>
       <button data-v="findings"><span class="ic">！</span>指摘管理</button>
-      <div class="navlabel">チェック様式</div>
-      <button data-v="hearing"><span class="ic">?</span>ヒアリング事項</button>
+      <div class="navlabel">マスタ</div>
       <button data-v="checklist"><span class="ic">✓</span>監査チェックリスト</button>
       <button data-v="docs"><span class="ic">▤</span>保管書類チェックリスト</button>
     </nav>
-    <div class="foot">大房行政書士法人<br>内部監査台帳 v0.2</div>
+    <div class="foot">大房行政書士法人<br>内部監査台帳 v0.3</div>
   </aside>
   <div class="main">
     <div class="top">
@@ -345,26 +346,20 @@ function orgInfo(o){
   };
 }
 async function orgCompanies(o){
-  const {data:links}=await sb.from("k_org_companies").select("*,k_companies(*)").eq("audit_org_id",o.id);
-  $("#otab").innerHTML=`<div class="row" style="margin-bottom:12px"><button class="btn sm" id="addco">＋ 受入企業を追加</button></div>
-   <div class="card">${(links&&links.length)?`<table><thead><tr><th>企業名</th><th>委託費</th><th>契約期間</th><th>状態</th></tr></thead><tbody>${
-     links.map(l=>`<tr><td>${esc(l.k_companies?.name||"—")}</td><td>${esc(l.support_fee||"—")}</td><td>${fmt(l.contract_start)}〜${fmt(l.contract_end)}</td><td>${esc(l.status||"")}</td></tr>`).join("")
-   }</tbody></table>`:'<div class="empty">受入企業が未登録です。</div>'}</div>`;
-  $("#addco").onclick=()=>modal("受入企業を追加",`<div class="form">
-     <label>企業名 *</label><input name="cname">
-     <label>代表者</label><input name="crep">
-     <label>分野・業種</label><input name="cindustry">
-     <label>支援委託費</label><input name="fee" placeholder="30,000円/月">
-     <label>契約開始</label><input name="cs" type="date">
-     <label>契約終了</label><input name="ce" type="date">
-   </div>`, async m=>{
-     const cname=val(m,"cname");if(!cname){toast("企業名は必須です");return false;}
-     const {data:co,error:e1}=await sb.from("k_companies").insert({name:cname,rep_name:val(m,"crep")||null,industry:val(m,"cindustry")||null}).select().single();
-     if(e1){toast("失敗:"+e1.message);return false;}
-     const {error:e2}=await sb.from("k_org_companies").insert({audit_org_id:o.id,company_id:co.id,support_fee:val(m,"fee")||null,contract_start:val(m,"cs")||null,contract_end:val(m,"ce")||null});
-     if(e2){toast("失敗:"+e2.message);return false;}
-     toast("追加しました");orgCompanies(o);
-   });
+  $("#otab").innerHTML='<div class="empty">読み込み中…</div>';
+  // アンシス側で紐づく受入企業を集約（企業マスタ support_org_name 一致 ＋ 案件 org 一致）
+  const [{data:comps},{data:cs}]=await Promise.all([
+    sb.from("companies").select("name,rep_name,pref,city,industry").eq("support_org_name",o.name),
+    sb.from("cases").select("company").eq("org",o.name)
+  ]);
+  const map=new Map();
+  (comps||[]).forEach(c=>{if(c.name)map.set(c.name,{name:c.name,rep:c.rep_name||"",area:[c.pref,c.city].filter(Boolean).join(""),industry:c.industry||"",cases:0});});
+  (cs||[]).forEach(r=>{if(!r.company)return;if(!map.has(r.company))map.set(r.company,{name:r.company,rep:"",area:"",industry:"",cases:0});map.get(r.company).cases++;});
+  const list=[...map.values()].sort((a,b)=>b.cases-a.cases);
+  $("#otab").innerHTML=`<div class="card" style="padding:12px 16px;margin-bottom:12px"><span class="muted">案シスでこの登録支援機関に紐づく受入企業です（企業マスタ＋案件から集約・読み取り専用）。</span></div>
+   <div class="card">${list.length?`<table><thead><tr><th>受入企業名</th><th>代表者</th><th>所在</th><th>分野</th><th>案件数</th></tr></thead><tbody>${
+     list.map(c=>`<tr><td><b>${esc(c.name)}</b></td><td>${esc(c.rep||"—")}</td><td>${esc(c.area||"—")}</td><td>${esc(c.industry||"—")}</td><td>${c.cases||"—"}</td></tr>`).join("")
+   }</tbody></table>`:'<div class="empty">案シス上でこの機関に紐づく受入企業が見つかりませんでした。</div>'}</div>`;
 }
 async function orgPersons(o){
   const {data:ps}=await sb.from("k_persons").select("*").eq("audit_org_id",o.id).order("created_at",{ascending:false});
@@ -445,44 +440,15 @@ window.openAudit=async(auditId,orgId)=>{
      <div class="sp" style="flex:1"></div>
      <button class="btn sm" id="finishBtn">監査を判定済にする</button>
    </div></div>
-   <div class="tabs" id="atabs"><button data-t="h" class="on">ヒアリング（18問）</button><button data-t="q">監査チェック（54項目）</button><button data-t="d">保管書類（15項目）</button></div>
+   <div class="abclegend">評価：<span class="tag g">A 問題なし</span> <span class="tag a">B 一部問題あり</span> <span class="tag r">C 問題あり</span></div>
+   <div class="tabs" id="atabs"><button data-t="q" class="on">① 監査チェックリスト（54項目）</button><button data-t="d">② 保管書類チェックリスト（15項目）</button></div>
    <div id="apane"></div>`;
-  const tabs={h:()=>auditHearing(auditId),q:()=>auditChecklist(auditId),d:()=>auditDocs(auditId)};
+  const tabs={q:()=>auditChecklist(auditId),d:()=>auditDocs(auditId)};
   document.querySelectorAll("#atabs button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#atabs button").forEach(x=>x.classList.toggle("on",x===b));tabs[b.dataset.t]();});
   $("#finishBtn").onclick=async()=>{await sb.from("k_audits").update({status:"判定済",status_changed_at:new Date().toISOString()}).eq("id",auditId);toast("判定済にしました");};
-  auditHearing(auditId);updateProg(auditId);
+  auditChecklist(auditId);updateProg(auditId);
 };
-async function auditHearing(auditId){
-  const pane=$("#apane");pane.innerHTML='<div class="empty">読み込み中…</div>';
-  const {data:master}=await sb.from("k_hearing_master").select("*").eq("active",true).order("sort");
-  let {data:res}=await sb.from("k_hearing_results").select("*").eq("audit_id",auditId);
-  const need=master.filter(m=>!m.is_note);
-  if(!res||res.length<need.length){
-    const have=new Set((res||[]).map(r=>r.master_id));
-    const toIns=need.filter(m=>!have.has(m.id)).map(m=>({audit_id:auditId,master_id:m.id}));
-    if(toIns.length)await sb.from("k_hearing_results").insert(toIns);
-    ({data:res}=await sb.from("k_hearing_results").select("*").eq("audit_id",auditId));
-  }
-  const rmap={};(res||[]).forEach(r=>rmap[r.master_id]=r);
-  pane.innerHTML=catGroupsHTML(master, m=> m.is_note
-    ? `<div class="qrow"><div class="qtext muted">※ ${esc(m.question)}</div><div></div></div>`
-    : (function(){const r=rmap[m.id]||{};const cur=r.answer||"";
-       return `<div class="qrow"><div><div class="qtext">${m.item_no}. ${esc(m.question)}</div>
-         <div class="qmeta"><button class="notebtn" onclick="this.closest('.qrow').querySelector('.qnote').classList.toggle('show')">＋備考</button></div>
-         <textarea class="qnote ${r.note?'show':''}" data-mid="${m.id}" placeholder="備考・聞き取りメモ">${esc(r.note||"")}</textarea></div>
-         <div class="judge" data-mid="${m.id}">
-           <button class="jb ok ${cur==='pos'?'on':''}" data-a="pos">${esc(m.pos_label||"はい")}</button>
-           <button class="jb ng ${cur==='neg'?'on':''}" data-a="neg">${esc(m.neg_label||"いいえ")}</button>
-         </div></div>`;})());
-  pane.querySelectorAll(".judge .jb").forEach(b=>b.onclick=async()=>{
-    const mid=b.parentElement.dataset.mid,a=b.dataset.a;
-    b.parentElement.querySelectorAll(".jb").forEach(x=>x.classList.remove("on"));b.classList.add("on");
-    await sb.from("k_hearing_results").update({answer:a,checked_at:new Date().toISOString()}).eq("audit_id",auditId).eq("master_id",mid);
-  });
-  pane.querySelectorAll(".qnote").forEach(t=>t.onblur=async()=>{
-    await sb.from("k_hearing_results").update({note:t.value.trim()||null}).eq("audit_id",auditId).eq("master_id",t.dataset.mid);
-  });
-}
+function abcBtn(code,cur){const cls=code==='A'?'ok':code==='B'?'warn':'ng';return `<button class="jb ${cls} ${cur===code?'on':''}" data-r="${code}">${code}</button>`;}
 async function auditChecklist(auditId){
   const pane=$("#apane");pane.innerHTML='<div class="empty">読み込み中…</div>';
   const {data:master}=await sb.from("k_checklist_master").select("*").eq("active",true).order("sort");
@@ -501,7 +467,7 @@ async function auditChecklist(auditId){
           <textarea class="qnote ${r.note?"show":""}" data-mid="${m.id}" placeholder="備考・証跡URL">${esc(r.note||"")}</textarea>
         </div>
         <div class="judge" data-mid="${m.id}">
-          ${jbtn("適合","ok",cur)}${jbtn("要改善","warn",cur)}${jbtn("不適合","ng",cur)}${jbtn("該当なし","na",cur)}
+          ${abcBtn("A",cur)}${abcBtn("B",cur)}${abcBtn("C",cur)}
         </div></div>`;
     });
     html+=`</div>`;
@@ -535,7 +501,7 @@ async function auditDocs(auditId){
       return `<tr><td>${d.no}</td>
         <td><div>${esc(d.doc_name.slice(0,80))}${d.doc_name.length>80?"…":""}</div><div class="qmeta">${esc(d.form_no||"")} ／ 保存:${esc(d.keep_period||"")} ／ ${esc(d.ref||"")}</div></td>
         <td><input type="checkbox" data-doc="${d.id}" class="exists" ${r.exists_flag?"checked":""}></td>
-        <td><div class="judge" data-doc="${d.id}">${jbtn("適合","ok",cur)}${jbtn("要改善","warn",cur)}${jbtn("不適合","ng",cur)}</div></td></tr>`;
+        <td><div class="judge" data-doc="${d.id}">${abcBtn("A",cur)}${abcBtn("B",cur)}${abcBtn("C",cur)}</div></td></tr>`;
     }).join("")
   }</tbody></table></div>`;
   pane.querySelectorAll(".exists").forEach(c=>c.onchange=async()=>{await sb.from("k_doc_results").update({exists_flag:c.checked}).eq("audit_id",auditId).eq("doc_id",c.dataset.doc);});
@@ -563,36 +529,59 @@ function catGroupsHTML(items,rowFn){
     return `<div class="catblock"><div class="cathead">${cn}. ${esc(c.name)}<span class="cnt">${n}項目</span></div>${c.items.map(rowFn).join("")}</div>`;
   }).join("");
 }
-routes.hearing=async()=>{
-  setHead("ヒアリング事項",'入管「質問票」に基づく支援機関ヒアリング');
-  const {data}=await sb.from("k_hearing_master").select("*").eq("active",true).order("sort");
-  if(!data){view.innerHTML='<div class="empty">読み込みに失敗しました</div>';return;}
-  view.innerHTML=`<div class="card" style="padding:12px 16px;margin-bottom:14px"><span class="muted">支援責任者・支援担当者へのヒアリングで使う標準質問です。監査時にこの様式で聞き取りを行います。</span></div>`
-   + catGroupsHTML(data, m=> m.is_note
-      ? `<div class="qrow"><div class="qtext muted">※ ${esc(m.question)}</div><div></div></div>`
-      : `<div class="qrow"><div><div class="qtext">${m.item_no}. ${esc(m.question)}</div>${m.ref_page?`<div class="qmeta">別冊 ${esc(m.ref_page)}</div>`:""}</div>
-         <div class="judge"><span class="jb">${esc(m.pos_label||"はい")}</span><span class="jb">${esc(m.neg_label||"いいえ")}</span></div></div>`);
-};
 routes.checklist=async()=>{
-  setHead("監査チェックリスト","支援実施状況確認チェックリスト（11分野・54項目）");
+  setHead("監査チェックリスト（マスタ）","支援実施状況確認チェックリスト（11分野・54項目）");
   const {data}=await sb.from("k_checklist_master").select("*").eq("active",true).order("sort");
   if(!data){view.innerHTML='<div class="empty">読み込みに失敗しました</div>';return;}
-  view.innerHTML=`<div class="card" style="padding:12px 16px;margin-bottom:14px"><span class="muted">監査時の判定様式です。実際の判定は各機関の「監査履歴 → 監査実施」画面で行います。</span></div>`
-   + catGroupsHTML(data, m=>`<div class="qrow"><div><div class="qtext">${m.item_no}. ${esc(m.question)}</div>${m.ref_page?`<div class="qmeta">別冊 ${esc(m.ref_page)}</div>`:""}</div>
-      <div class="judge"><span class="jb">適合</span><span class="jb">要改善</span><span class="jb">不適合</span></div></div>`);
+  view.innerHTML=`<div class="card" style="padding:12px 16px;margin-bottom:14px"><span class="muted">模擬監査で使う標準チェック項目のマスタです。評価（A/B/C）は「模擬監査」画面で行います。項目の追加・修正はこのマスタが元になります。</span></div>`
+   + catGroupsHTML(data, m=>`<div class="qrow"><div><div class="qtext">${m.item_no}. ${esc(m.question)}</div>${m.ref_page?`<div class="qmeta">別冊 ${esc(m.ref_page)}</div>`:""}</div><div></div></div>`);
 };
 routes.docs=async()=>{
-  setHead("保管書類チェックリスト","登録支援機関 保管書類（15項目）");
+  setHead("保管書類チェックリスト（マスタ）","登録支援機関 保管書類（15項目）");
   const {data}=await sb.from("k_doc_master").select("*").eq("active",true).order("sort");
   if(!data){view.innerHTML='<div class="empty">読み込みに失敗しました</div>';return;}
-  view.innerHTML=`<div class="card" style="padding:12px 16px;margin-bottom:14px"><span class="muted">監査時の保管書類チェック様式です。実際のチェックは各機関の「監査実施 → 保管書類」タブで行います。</span></div>
+  view.innerHTML=`<div class="card" style="padding:12px 16px;margin-bottom:14px"><span class="muted">模擬監査で使う保管書類チェックのマスタです。評価（A/B/C）は「模擬監査」画面の②で行います。</span></div>
    <div class="card"><table><thead><tr><th>No</th><th>帳簿・書類／記載事項</th><th>様式</th><th>保存期間</th><th>根拠</th></tr></thead><tbody>${
     data.map(d=>`<tr><td>${d.no}</td><td><div class="qmeta muted" style="margin-bottom:2px">${esc(d.ledger_group||"")}</div><div class="qtext">${esc(d.doc_name)}</div></td><td>${esc(d.form_no||"")}</td><td>${esc(d.keep_period||"")}</td><td class="qmeta">${esc(d.ref||"")}</td></tr>`).join("")
   }</tbody></table></div>`;
 };
 
+// ====== 模擬監査 ======
+routes.mock=async()=>{
+  setHead("模擬監査","",btn("＋ 模擬監査を開始",startMock));
+  const {data:audits}=await sb.from("k_audits").select("*,k_audit_orgs(name)").order("audit_date",{ascending:false,nullsFirst:false});
+  const {data:cr}=await sb.from("k_checklist_results").select("audit_id,result");
+  const prog={};(cr||[]).forEach(r=>{const p=prog[r.audit_id]=prog[r.audit_id]||{t:0,d:0};p.t++;if(r.result)p.d++;});
+  view.innerHTML=`<div class="card" style="padding:12px 16px;margin-bottom:14px"><span class="muted">模擬監査はここから開始します。①監査チェックリスト（54項目）を1つずつ確認 → ②保管書類チェックリスト（15項目）の順で、各項目を A（問題なし）・B（一部問題あり）・C（問題あり）で評価します。</span></div>
+   <div class="card">${(audits&&audits.length)?`<table><thead><tr><th>対象機関</th><th>監査日</th><th>種別</th><th>状態</th><th>進捗</th><th></th></tr></thead><tbody>${
+     audits.map(a=>{const p=prog[a.id]||{t:0,d:0};return `<tr class="click" onclick="openAudit('${a.id}','${a.audit_org_id}')">
+       <td><b>${esc(a.k_audit_orgs?.name||"—")}</b></td><td>${fmt(a.audit_date)}</td><td>${esc(a.audit_type||"")}</td>
+       <td><span class="tag p">${esc(a.status||"")}</span></td><td>${p.d} / ${p.t||54}</td>
+       <td><button class="btn sm ghost">開く</button></td></tr>`;}).join("")
+   }</tbody></table>`:'<div class="empty">まだ模擬監査がありません。「＋ 模擬監査を開始」から始めてください。</div>'}</div>`;
+};
+async function startMock(){
+  const {data:orgs}=await sb.from("k_audit_orgs").select("id,name").order("name");
+  if(!orgs||!orgs.length){toast("先に監査対象機関を登録してください");go("orgs");return;}
+  const opts=orgs.map(o=>`<option value="${o.id}">${esc(o.name)}</option>`).join("");
+  modal("模擬監査を開始",`<div class="form">
+     <label>対象機関 *</label><select name="org">${opts}</select>
+     <label>監査日</label><input name="d" type="date" value="${new Date().toISOString().slice(0,10)}">
+     <label>種別</label><select name="t"><option>模擬監査</option><option>定期</option><option>初回</option><option>フォローアップ</option></select>
+     <label>方法</label><select name="mtd"><option>往査</option><option>オンライン</option><option>書面</option></select>
+   </div><p class="muted" style="margin:10px 0 0">開始すると監査チェックリスト54項目の評価枠が生成され、監査画面に移ります。</p>`, async m=>{
+     const orgId=val(m,"org");if(!orgId){toast("対象機関を選んでください");return false;}
+     const {data:a,error}=await sb.from("k_audits").insert({audit_org_id:orgId,audit_date:val(m,"d")||null,audit_type:val(m,"t"),method:val(m,"mtd"),status:"実施中",status_changed_at:new Date().toISOString()}).select().single();
+     if(error){toast("失敗:"+error.message);return false;}
+     const {data:cm}=await sb.from("k_checklist_master").select("id").eq("active",true);
+     if(cm&&cm.length)await sb.from("k_checklist_results").insert(cm.map(r=>({audit_id:a.id,master_id:r.id})));
+     await sb.from("k_audit_orgs").update({audit_status:"監査中"}).eq("id",orgId);
+     toast("模擬監査を開始しました");openAudit(a.id,orgId);
+   },"開始する");
+}
+
 // 起動
-go("dashboard");
+go("mock");
 </script>
 </body>
 </html>
