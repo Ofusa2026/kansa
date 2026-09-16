@@ -25,6 +25,7 @@
   .side{width:216px;flex:0 0 216px;background:var(--primary);color:#dfe5f0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
   .brand{padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.12)}
   .brand b{color:#fff;font-size:18px;letter-spacing:.06em}
+  .brand .ver{font-size:11px;color:#aab6cf;margin-left:8px;font-weight:600}
   .brand span{display:block;font-size:11px;color:#aab6cf;margin-top:2px}
   .nav{padding:10px 8px;flex:1}
   .nav button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:#c7d0e2;
@@ -145,7 +146,7 @@
 <body>
 <div class="app">
   <aside class="side" id="side">
-    <div class="brand"><b>カンシス</b><span>登録支援機関 監査システム</span></div>
+    <div class="brand"><b>カンシス</b><span class="ver" id="appver"></span><span>登録支援機関 監査システム</span></div>
     <nav class="nav" id="nav">
       <button data-v="mock" class="on"><span class="ic">◎</span>模擬監査</button>
       <button data-v="dashboard"><span class="ic">▤</span>ダッシュボード</button>
@@ -155,7 +156,7 @@
       <button data-v="checklist"><span class="ic">✓</span>監査チェックリスト</button>
       <button data-v="docs"><span class="ic">▤</span>保管書類チェックリスト</button>
     </nav>
-    <div class="foot">大房行政書士法人<br>内部監査台帳 v0.6</div>
+    <div class="foot">大房行政書士法人<br>内部監査台帳 <span id="footver"></span></div>
   </aside>
   <div class="main">
     <div class="top">
@@ -679,6 +680,9 @@ window.delMock=(auditId)=>{
 };
 
 // 起動
+const APP_VERSION="v0.7";
+document.getElementById("appver").textContent=APP_VERSION;
+document.getElementById("footver").textContent=APP_VERSION;
 go("mock");
 </script>
 </body>
