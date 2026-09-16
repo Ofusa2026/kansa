@@ -471,9 +471,10 @@ window.openAudit=async(auditId,orgId)=>{
      <button class="btn sm" id="finishBtn">監査を判定済にする</button>
    </div>
    <div class="row" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
-     <span class="muted" style="font-size:12px">同席者：</span><span id="attList" style="font-size:12.5px">${attStr(a.attendees)}</span>
+     <span class="muted" style="font-size:12px">担当：</span><span style="font-size:12.5px">${esc(a.auditor||"—")}</span>
+     <span class="muted" style="font-size:12px;margin-left:16px">同席者：</span><span id="attList" style="font-size:12.5px">${attStr(a.attendees)}</span>
      <div class="sp" style="flex:1"></div>
-     <button class="btn sm ghost" id="attBtn">同席者を編集</button>
+     <button class="btn sm ghost" id="attBtn">担当・同席者を編集</button>
    </div></div>
    <div class="abclegend">評価：<span class="tag g">A 問題なし</span> <span class="tag a">B 一部問題あり</span> <span class="tag r">C 問題あり</span></div>
    <div class="tabs" id="atabs"><button data-t="q" class="on">① 監査チェックリスト（54項目）</button><button data-t="d">② 保管書類チェックリスト（15項目）</button></div>
@@ -482,16 +483,19 @@ window.openAudit=async(auditId,orgId)=>{
   document.querySelectorAll("#atabs button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#atabs button").forEach(x=>x.classList.toggle("on",x===b));tabs[b.dataset.t]();});
   $("#finishBtn").onclick=async()=>{await sb.from("k_audits").update({status:"判定済",status_changed_at:new Date().toISOString()}).eq("id",auditId);toast("判定済にしました");};
   $("#reportBtn").onclick=()=>openReport(auditId,orgId);
-  $("#attBtn").onclick=()=>editAttendees(auditId,orgId,a.attendees);
+  $("#attBtn").onclick=()=>editAttendees(auditId,orgId,a.attendees,a.auditor);
   auditChecklist(auditId);updateProg(auditId);
 };
 function attStr(list){return (Array.isArray(list)&&list.length)?list.map(a=>`${esc(a.name)}（${esc(a.role||"")}）`).join("、"):"—";}
 function evalDash(v){return v?`<span class="tag ${v==='A'?'g':v==='B'?'a':'r'}">${v}</span>`:`<span class="tag n">—</span>`;}
-window.editAttendees=(auditId,orgId,current)=>{
+window.editAttendees=(auditId,orgId,current,auditor)=>{
   let rows=(Array.isArray(current)&&current.length)?current.slice(0,10).map(r=>({name:r.name||"",role:r.role||"支援担当者"})):[];
   const mask=document.createElement("div");mask.className="mask";
-  mask.innerHTML=`<div class="modal"><div class="mh">同席者（最大10名）<button class="x">×</button></div>
-    <div class="mb"><div id="atrows"></div><button class="btn sm ghost" id="addrow" style="margin-top:6px">＋ 同席者を追加</button></div>
+  mask.innerHTML=`<div class="modal"><div class="mh">担当・同席者<button class="x">×</button></div>
+    <div class="mb">
+      <div class="form" style="grid-template-columns:120px 1fr;margin-bottom:16px"><label>担当（監査担当者）</label><input id="auditorInput" placeholder="例：大房 太郎" value="${esc(auditor||"")}"></div>
+      <div class="muted" style="font-size:12px;margin-bottom:6px">同席者（最大10名・名前と役職）</div>
+      <div id="atrows"></div><button class="btn sm ghost" id="addrow" style="margin-top:6px">＋ 同席者を追加</button></div>
     <div class="mf"><button class="btn ghost" id="cancel">キャンセル</button><button class="btn" id="save">保存</button></div></div>`;
   document.body.appendChild(mask);
   const close=()=>mask.remove();
@@ -510,10 +514,10 @@ window.editAttendees=(auditId,orgId,current)=>{
   }
   mask.querySelector("#addrow").onclick=()=>{sync();if(rows.length>=10){toast("同席者は最大10名までです");return;}rows.push({name:"",role:"支援担当者"});render();};
   mask.querySelector("#save").onclick=async()=>{
-    sync();const clean=rows.filter(r=>r.name);
-    const {error}=await sb.from("k_audits").update({attendees:clean}).eq("id",auditId);
+    sync();const clean=rows.filter(r=>r.name);const au=mask.querySelector("#auditorInput").value.trim()||null;
+    const {error}=await sb.from("k_audits").update({auditor:au,attendees:clean}).eq("id",auditId);
     if(error){toast("保存に失敗: "+error.message);return;}
-    close();toast("同席者を保存しました");openAudit(auditId,orgId);
+    close();toast("担当・同席者を保存しました");openAudit(auditId,orgId);
   };
   render();
 };
@@ -706,12 +710,13 @@ async function startMock(){
   const opts=orgs.map(o=>`<option value="${o.id}">${esc(o.name)}</option>`).join("");
   modal("模擬監査を開始",`<div class="form">
      <label>対象機関 *</label><select name="org">${opts}</select>
+     <label>担当（監査担当者）</label><input name="auditor" placeholder="例：大房 太郎">
      <label>監査日</label><input name="d" type="date" value="${new Date().toISOString().slice(0,10)}">
      <label>種別</label><select name="t"><option>模擬監査</option><option>定期</option><option>初回</option><option>フォローアップ</option></select>
      <label>方法</label><select name="mtd"><option>往査</option><option>オンライン</option><option>書面</option></select>
    </div><p class="muted" style="margin:10px 0 0">開始すると監査チェックリスト54項目の評価枠が生成され、監査画面に移ります。</p>`, async m=>{
      const orgId=val(m,"org");if(!orgId){toast("対象機関を選んでください");return false;}
-     const {data:a,error}=await sb.from("k_audits").insert({audit_org_id:orgId,audit_date:val(m,"d")||null,audit_type:val(m,"t"),method:val(m,"mtd"),status:"実施中",status_changed_at:new Date().toISOString()}).select().single();
+     const {data:a,error}=await sb.from("k_audits").insert({audit_org_id:orgId,auditor:val(m,"auditor")||null,audit_date:val(m,"d")||null,audit_type:val(m,"t"),method:val(m,"mtd"),status:"実施中",status_changed_at:new Date().toISOString()}).select().single();
      if(error){toast("失敗:"+error.message);return false;}
      const {data:cm}=await sb.from("k_checklist_master").select("id").eq("active",true);
      if(cm&&cm.length)await sb.from("k_checklist_results").insert(cm.map(r=>({audit_id:a.id,master_id:r.id})));
@@ -728,7 +733,7 @@ window.delMock=(auditId)=>{
 };
 
 // 起動
-const APP_VERSION="v0.8";
+const APP_VERSION="v0.9";
 document.getElementById("appver").textContent=APP_VERSION;
 document.getElementById("footver").textContent=APP_VERSION;
 go("mock");
