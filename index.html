@@ -70,6 +70,8 @@
   .btn:hover{background:var(--primary-d)}
   .btn.ghost{background:var(--surface);color:var(--primary);border:1px solid var(--line)}
   .btn.ghost:hover{background:var(--surface2)}
+  .btn.danger{background:var(--ng);color:#fff}
+  .btn.danger:hover{background:#8f2029}
   .btn.sm{padding:6px 11px;font-size:12px}
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
   .grid{display:grid;gap:16px}
@@ -153,7 +155,7 @@
       <button data-v="checklist"><span class="ic">✓</span>監査チェックリスト</button>
       <button data-v="docs"><span class="ic">▤</span>保管書類チェックリスト</button>
     </nav>
-    <div class="foot">大房行政書士法人<br>内部監査台帳 v0.5</div>
+    <div class="foot">大房行政書士法人<br>内部監査台帳 v0.6</div>
   </aside>
   <div class="main">
     <div class="top">
@@ -646,7 +648,7 @@ routes.mock=async()=>{
      audits.map(a=>{const p=prog[a.id]||{t:0,d:0};return `<tr class="click" onclick="openAudit('${a.id}','${a.audit_org_id}')">
        <td><b>${esc(a.k_audit_orgs?.name||"—")}</b></td><td>${fmt(a.audit_date)}</td><td>${esc(a.audit_type||"")}</td>
        <td><span class="tag p">${esc(a.status||"")}</span></td><td>${p.d} / ${p.t||54}</td>
-       <td><button class="btn sm ghost">開く</button></td></tr>`;}).join("")
+       <td style="white-space:nowrap"><button class="btn sm ghost" onclick="event.stopPropagation();openAudit('${a.id}','${a.audit_org_id}')">開く</button><button class="btn sm danger" style="margin-left:6px" onclick="event.stopPropagation();delMock('${a.id}')">削除</button></td></tr>`;}).join("")
    }</tbody></table>`:'<div class="empty">まだ模擬監査がありません。「＋ 模擬監査を開始」から始めてください。</div>'}</div>`;
 };
 async function startMock(){
@@ -668,6 +670,13 @@ async function startMock(){
      toast("模擬監査を開始しました");openAudit(a.id,orgId);
    },"開始する");
 }
+window.delMock=(auditId)=>{
+  modal("模擬監査を削除","<p>この模擬監査と、その評価・コメントをすべて削除します。よろしいですか？<br>この操作は取り消せません。</p>", async()=>{
+    const {error}=await sb.from("k_audits").delete().eq("id",auditId);
+    if(error){toast("削除に失敗: "+error.message);return false;}
+    toast("削除しました");go("mock");
+  },"削除する");
+};
 
 // 起動
 go("mock");
